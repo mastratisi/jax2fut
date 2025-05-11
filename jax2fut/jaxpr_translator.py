@@ -27,25 +27,23 @@ class TypeTranslator:
     """Handles translation of JAX types to Futhark types."""
 
     @staticmethod
-    def jax_dtype_to_futhark(dtype) -> str:
+    def jax_dtype_to_futhark(dtype_str: str) -> str:
         """Convert JAX dtype to Futhark base type."""
         dtype_map = {
-            jnp.float32: "f32",
-            jnp.float64: "f64",
-            jnp.int32: "i32",
-            jnp.int64: "i64",
-            jnp.bool_: "bool",
+            "float32": "f32",
+            "float64": "f64",
+            "int32": "i32",
+            "int64": "i64",
+            "bool": "bool",
         }
-        if dtype not in dtype_map.keys():
-            print(type(dtype))
-            print(type(jnp.float32))
-            raise NotImplementedError(f"Unsupported JAX dtype: {dtype}")
-        return dtype_map[dtype]
+        if dtype_str not in dtype_map.keys():
+            raise NotImplementedError(f"Unsupported JAX dtype: {dtype_str}")
+        return dtype_map[dtype_str]
 
     @staticmethod
     def aval_to_futhark_type(aval) -> FutharkType:
         """Convert JAX abstract value to Futhark type."""
-        base = TypeTranslator.jax_dtype_to_futhark(aval.dtype)
+        base = TypeTranslator.jax_dtype_to_futhark(str(aval.dtype))
         dims = list(aval.shape)
         return FutharkType(base=base, dims=dims)
 
