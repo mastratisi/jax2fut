@@ -9,6 +9,7 @@ let my-python = pkgs.python3;
 
 
       jax
+      jaxlib
       #flax
       
       matplotlib
