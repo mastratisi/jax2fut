@@ -22,7 +22,7 @@ class FutharkType:
     def __repr__(self) -> str:
         return f"FutharkType(base='{self.base}', dims={self.dims}, is_mutable={self.is_mutable})"
 
-    def __eq__(self, other: "FutharkType") -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, FutharkType):
             return False
         return (
@@ -73,9 +73,9 @@ class VarExpr(Expr):
 
     var: Var
 
-    @property
-    def type(self) -> FutharkType:
-        return self.var.type
+    def __init__(self, var: Var) -> None:
+        assert isinstance(var, Var), f"Expected Var, got {type(var).__name__}"
+        self.var = var
 
     def __repr__(self) -> str:
         return f"VarExpr(var={repr(self.var)})"
@@ -175,7 +175,7 @@ class Function:
     params: List[Var]
     body: List[Stmt]
     result: Expr
-    type_params: List[str] = None  # For polymorphic functions
+    type_params: List[str] = []  # For polymorphic functions
 
     def __repr__(self) -> str:
         return (

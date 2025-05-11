@@ -48,6 +48,36 @@ class TypeTranslator:
         return FutharkType(base=base, dims=dims)
 
 
+
+
+# === utils/helpers for handlers ===
+
+def is_elementwise(type1:FutharkType, type2:FutharkType):
+    dims1, dims2 = type1.dims, type2.dims
+    return dims1 == dims2 and dims1 != []
+
+def is_scalar_matrix(type1:FutharkType, type2:FutharkType):
+    dims1, dims2 = type1.dims, type2.dims
+    return dims1 != dims2 and dims1 == []
+
+def is_matrix_scalar(type1:FutharkType, type2:FutharkType):
+    dims1, dims2 = type1.dims, type2.dims
+    return dims1 != dims2 and dims2 == []
+
+    
+# === Advance Primitiv Handlers ===
+
+def handle_reduce_sum(inputs: List[Expr], params: Dict[str, Any]) -> Expr:
+    axes = params["axes"]
+    match axes:
+        case (0,):
+            old_type = inputs[0].type
+            new_base = old_type.base
+            new_dim = old_type.dims[1:]
+            return UnaryOp(op="sum", x=inputs[0], type=FutharkType(new_base, new_dim))
+    raise Exception("axes shape not implemented in handle_reduce_sum")
+    
+
 # === Primitive Translation ===
 
 
@@ -65,6 +95,8 @@ class PrimitiveTranslator:
     def __init__(self):
         self.handlers: Dict[str, PrimitiveHandler] = {}
         self._register_default_handlers()
+        self.register_handler("reduce_sum", handle_reduce_sum)
+        
 
     def register_handler(
         self, name: str, handler: Callable[[List[Expr], Dict[str, Any]], Expr]
@@ -81,6 +113,7 @@ class PrimitiveTranslator:
             ("sub", "-"),
             ("mul", "*"),
             ("div", "/"),
+            ("pow", "**"),
             ("rem", "%"),
             ("eq", "=="),
             ("ne", "!="),
@@ -93,6 +126,7 @@ class PrimitiveTranslator:
             def make_binary_handler(op_name: str):
                 def handler(inputs: List[Expr], params: Dict[str, Any]) -> Expr:
                     assert len(inputs) == 2
+                    
                     return BinaryOp(
                         op=op_name,
                         x=inputs[0],
@@ -105,7 +139,9 @@ class PrimitiveTranslator:
             self.register_handler(op, make_binary_handler(futhark_op))
 
         # Unary operations
-        for op in ["sin", "cos", "exp", "log", "neg"]:
+        for op, futhark_op in [("sin", "sin"), ("cos", "cos"),
+                               ("exp", "exp"), ("log", "log"),
+                               ("neg", "neg"), ("sqrt", "sqrt")]:
 
             def make_unary_handler(op_name: str):
                 def handler(inputs: List[Expr], params: Dict[str, Any]) -> Expr:
@@ -114,7 +150,7 @@ class PrimitiveTranslator:
 
                 return handler
 
-            self.register_handler(op, make_unary_handler(op))
+            self.register_handler(op, make_unary_handler(futhark_op))
 
     def translate_primitive(
         self, primitive: Primitive, inputs: List[Expr], params: Dict[str, Any]
@@ -127,6 +163,7 @@ class PrimitiveTranslator:
         return self.handlers[primitive.name].handler(inputs, params)
 
 
+    
 # === Expression Translation ===
 
 
@@ -143,7 +180,7 @@ class ExprTranslator:
         type_ = self.type_translator.aval_to_futhark_type(lit.aval)
         return LiteralExpr(value=lit.val, type=type_)
 
-    def translate_var(self, var: JaxprVar) -> Union[Var, LiteralExpr]:
+    def translate_var(self, var: JaxprVar) -> Var | LiteralExpr:
         """Translate a JAX variable to a Futhark variable or literal."""
         if var not in self.env:
             type_ = self.type_translator.aval_to_futhark_type(var.aval)
@@ -153,7 +190,7 @@ class ExprTranslator:
     def translate_eqn(self, eqn: JaxprEqn) -> List[Let]:
         """Translate a JAX equation to Futhark let bindings."""
         # Translate inputs
-        inputs = []
+        inputs : List[Expr]= []
         for invar in eqn.invars:
             if isinstance(invar, Literal):
                 inputs.append(self.translate_literal(invar))

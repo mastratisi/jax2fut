@@ -33,13 +33,14 @@ def example_array_operations():
 
     def f(x: jnp.ndarray) -> jnp.ndarray:
         # Array operations: map, reduce, and element-wise operations
-        squared = jnp.square(x)
+        squared = x ** 2.0
         summed = jnp.sum(squared)
         return jnp.sqrt(summed)
 
     # Get the jaxpr with a sample input
     x = jnp.array([1.0, 2.0, 3.0, 4.0])
     jaxpr = jax.make_jaxpr(f)(x)
+    print(jaxpr)
 
     # Translate to Futhark
     futhark_ast = jaxpr_to_futhark(jaxpr, name="array_ops_example")
@@ -122,8 +123,8 @@ def main():
     """Run all examples."""
     print("Running JAX to Futhark translation examples...\n")
 
-    example_simple_arithmetic()
-    # example_array_operations()
+    #example_simple_arithmetic()
+    example_array_operations()
     # example_matrix_operations()
     # example_multiple_functions()
     # example_conditional()

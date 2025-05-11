@@ -21,60 +21,6 @@ import jax
 import jax.numpy as jnp
 from jax.core import Literal, JaxprEqn, Var as JaxprVar, ClosedJaxpr
 
-# === 1) Define a minimal Futhark AST ===
-
-
-@dataclass
-class FutharkType:
-    base: str  # e.g. "f32"
-    dims: List[int]  # e.g. [5] for [5]f32
-
-    def __str__(self):
-        return f"{''.join(f'[{d}]' for d in self.dims)}{self.base}"
-
-
-@dataclass
-class Var:
-    name: str
-    type: FutharkType
-
-
-class Expr:
-    pass
-
-
-@dataclass
-class LiteralExpr(Expr):
-    value: Any
-    type: FutharkType
-
-
-@dataclass
-class UnaryOp(Expr):
-    op: str  # "sin", "exp", ...
-    x: Expr
-
-
-@dataclass
-class BinaryOp(Expr):
-    op: str  # "+", "*", etc.
-    x: Expr
-    y: Expr
-
-
-@dataclass
-class Let:
-    var: Var
-    expr: Expr
-
-
-@dataclass
-class Function:
-    name: str
-    params: List[Var]
-    body: List[Let]
-    result: Var
-
 
 # === 2) Helpers: map JAX dtypes & avals to Futhark types ===
 
@@ -216,14 +162,14 @@ class FutharkPrinter:
                 v = f"{v:.1f}"
             return repr(v)
 
-        if isinstance(expr, Var):
-            return expr.name
+        if isinstance(expr, VarExpr):
+            return expr.var.name
 
         if isinstance(expr, UnaryOp):
             return f"{expr.x.type.base}.{expr.op}({FutharkPrinter.print_expr(expr.x)})"
 
         if isinstance(expr, BinaryOp):
-            return f"({FutharkPrinter.print_expr(expr.x)}) {expr.op} ({FutharkPrinter.print_expr(expr.y)})"
+            return f"({expr.x.type.base}.{expr.op}) ({FutharkPrinter.print_expr(expr.x)}) ({FutharkPrinter.print_expr(expr.y)})"
 
         if isinstance(expr, ArrayIndex):
             indices = ", ".join(FutharkPrinter.print_expr(i) for i in expr.indices)
@@ -260,7 +206,7 @@ class FutharkPrinter:
     def print_let(let: Let, indent: int = 0) -> str:
         """Convert a Let to Futhark let binding syntax."""
         ind = " " * indent
-        return f"{ind}let {FutharkPrinter.print_var(let.var)} = {FutharkPrinter.print_expr(let.expr)}"
+        return f"{ind}let {FutharkPrinter.print_var(let.var)} = {FutharkPrinter.print_expr(let.expr)} in"
 
     @staticmethod
     def print_function(func: Function, indent: int = 0) -> str:
@@ -284,7 +230,7 @@ class FutharkPrinter:
         return (
             f"{ind}let {func.name}{type_params} ({params}) =\n"
             f"{body}\n"
-            f"{ind}  in {result}"
+            f"{ind} {result}"
         )
 
     @staticmethod
@@ -302,7 +248,7 @@ class FutharkPrinter:
 
 
 def print_futhark(ast: Any) -> str:
-    """Convenience function to print any Futhark AST node."""
+    """Convenience function to  any Futhark AST node."""
     if isinstance(ast, Module):
         return FutharkPrinter.print_module(ast)
     if isinstance(ast, Function):
@@ -311,8 +257,11 @@ def print_futhark(ast: Any) -> str:
         return FutharkPrinter.print_let(ast)
     if isinstance(ast, Expr):
         return FutharkPrinter.print_expr(ast)
-    if isinstance(ast, Var):
-        return FutharkPrinter.print_var(ast)
+    #if isinstance(ast, Var):
+    #    return FutharkPrinter.print_var(ast)
     if isinstance(ast, FutharkType):
         return FutharkPrinter.print_type(ast)
+    if isinstance(ast, VarExpr):
+        return FutharkPrinter.print_var(ast)
+        
     raise TypeError(f"Unsupported AST node type: {type(ast)}")

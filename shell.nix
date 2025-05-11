@@ -7,8 +7,9 @@ let my-python = pkgs.python3;
       jupyterlab-lsp jedi-language-server python-lsp-server
       sympy
 
-
+      mypy
       jax
+      jaxlib
       #flax
       
       matplotlib
