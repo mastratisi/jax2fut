@@ -31,3 +31,5 @@ pkgs.mkShell {
   ];
   shellHook = ''
 export PYTHONPATH=${python-with-my-packages}/${python-with-my-packages.sitePackages}
+    '';
+}
