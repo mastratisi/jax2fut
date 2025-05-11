@@ -5,6 +5,7 @@ from simple arithmetic to more complex array operations.
 """
 
 import jax
+from jax.typing import ArrayLike 
 import jax.numpy as jnp
 from jax2fut import jaxpr_to_futhark, jaxprs_to_futhark_module, print_futhark
 
@@ -12,7 +13,7 @@ from jax2fut import jaxpr_to_futhark, jaxprs_to_futhark_module, print_futhark
 def example_simple_arithmetic():
     """Example of translating a simple arithmetic function."""
 
-    def f(x: float, y: float) -> float:
+    def f(x: ArrayLike, y: ArrayLike) -> ArrayLike:
         return jnp.sin(x) + jnp.cos(y) * 2.0
 
     # Get the jaxpr
@@ -33,7 +34,7 @@ def example_array_operations():
 
     def f(x: jnp.ndarray) -> jnp.ndarray:
         # Array operations: map, reduce, and element-wise operations
-        squared = x ** 2.0
+        squared = 2.0 ** x
         summed = jnp.sum(squared)
         return jnp.sqrt(summed)
 
@@ -76,13 +77,13 @@ def example_matrix_operations():
 def example_multiple_functions():
     """Example of translating multiple functions into a module."""
 
-    def f(x: float) -> float:
+    def f(x: ArrayLike)  -> ArrayLike:
         return jnp.sin(x)
 
-    def g(x: float) -> float:
+    def g(x: ArrayLike) -> ArrayLike:
         return jnp.cos(x)
 
-    def h(x: float) -> float:
+    def h(x: ArrayLike) -> ArrayLike:
         return f(x) + g(x)
 
     # Get jaxprs for all functions

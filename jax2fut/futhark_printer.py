@@ -9,12 +9,11 @@ from .futhark_ast import (
     UnaryOp,
     BinaryOp,
     ArrayIndex,
-    ArrayOp,
     IfExpr,
+    MapExpr,
     Let,
     Function,
-    Module,
-    Stmt,
+    Module
 )
 
 import jax
@@ -41,57 +40,6 @@ def aval_to_futhark_type(aval) -> FutharkType:
     base = jax_dtype_to_futhark(aval.dtype)
     dims = list(aval.shape)
     return FutharkType(base, dims)
-
-
-# === 3) The main translator: ClosedJaxpr → Futhark AST ===
-
-
-def jaxpr_to_futhark_ast(cj: ClosedJaxpr, name: str = "f") -> Function:
-    jaxpr = cj.jaxpr
-    env: Dict[JaxprVar, Union[Var, LiteralExpr]] = {}
-    lets: List[Let] = []
-
-    # 3.1) parameters
-    params: List[Var] = []
-    for i, v in enumerate(jaxpr.invars):
-        vt = aval_to_futhark_type(v.aval)
-        fv = Var(f"temp{i}", vt)
-        env[v] = fv
-        params.append(fv)
-
-    # 3.2) walk equations
-    for eqn in jaxpr.eqns:
-        # resolve inputs
-        inputs: List[Expr] = []
-        for iv in eqn.invars:
-            if isinstance(iv, Literal):
-                lit_t = aval_to_futhark_type(iv.aval)
-                inputs.append(LiteralExpr(iv.val, lit_t))
-            else:
-                inputs.append(env[iv])
-
-        # pick the right AST node
-        prim = eqn.primitive.name
-        if prim == "add":
-            expr = BinaryOp("+", inputs[0], inputs[1])
-        elif prim == "mul":
-            expr = BinaryOp("*", inputs[0], inputs[1])
-        elif prim == "sin":
-            expr = UnaryOp("sin", inputs[0])
-        # … you can add more primitives here …
-        else:
-            raise NotImplementedError(f"primitive {prim}")
-
-        # bind the output var
-        outv = eqn.outvars[0]
-        vt = aval_to_futhark_type(outv.aval)
-        fv = Var(f"temp{len(env)}", vt)
-        env[outv] = fv
-        lets.append(Let(fv, expr))
-
-    # 3.3) final result
-    result = env[jaxpr.outvars[0]]
-    return Function(name, params, lets, result)
 
 
 # === 4) Pretty-printer for the AST ===
@@ -126,7 +74,7 @@ def print_function(fn: Function) -> str:
         orig_expr = print_expr(let.expr)
         body.append(f"let {let.var.name} = {orig_expr}")
 
-    result_name = fn.result.name
+    result_name = fn.result.var.name
 
     return (
         f"let {fn.name} ({', '.join(ps)}) =\n"
@@ -160,7 +108,7 @@ class FutharkPrinter:
             v = expr.value
             if isinstance(v, float) and "." not in repr(v):
                 v = f"{v:.1f}"
-            return repr(v)
+            return str(v)
 
         if isinstance(expr, VarExpr):
             return expr.var.name
@@ -169,35 +117,27 @@ class FutharkPrinter:
             return f"{expr.x.type.base}.{expr.op}({FutharkPrinter.print_expr(expr.x)})"
 
         if isinstance(expr, BinaryOp):
-            return f"({expr.x.type.base}.{expr.op}) ({FutharkPrinter.print_expr(expr.x)}) ({FutharkPrinter.print_expr(expr.y)})"
+            return f"({expr.x.type.base}.{expr.op}) {FutharkPrinter.print_expr(expr.x)} {FutharkPrinter.print_expr(expr.y)}"
 
         if isinstance(expr, ArrayIndex):
             indices = ", ".join(FutharkPrinter.print_expr(i) for i in expr.indices)
             return f"{FutharkPrinter.print_expr(expr.array)}[{indices}]"
 
-        if isinstance(expr, ArrayOp):
-            if expr.op == "map":
-                return f"map {FutharkPrinter.print_function(expr.f)} {FutharkPrinter.print_expr(expr.array)}"
-            elif expr.op == "reduce":
-                return (
-                    f"reduce {FutharkPrinter.print_function(expr.f)} "
-                    f"{FutharkPrinter.print_expr(expr.neutral)} "
-                    f"{FutharkPrinter.print_expr(expr.array)}"
-                )
-            elif expr.op == "scan":
-                return (
-                    f"scan {FutharkPrinter.print_function(expr.f)} "
-                    f"{FutharkPrinter.print_expr(expr.neutral)} "
-                    f"{FutharkPrinter.print_expr(expr.array)}"
-                )
-            else:
-                raise NotImplementedError(f"Array operation: {expr.op}")
-
+        
         if isinstance(expr, IfExpr):
             return (
                 f"if {FutharkPrinter.print_expr(expr.cond)}\n"
                 f"{ind}  then {FutharkPrinter.print_expr(expr.true_branch, indent + 2)}\n"
                 f"{ind}  else {FutharkPrinter.print_expr(expr.false_branch, indent + 2)}"
+            )
+        if isinstance(expr, MapExpr):
+            lambda_args = ",".join([FutharkPrinter.print_var(p) for p in expr.func.params])
+            lambda_body = "\n".join(FutharkPrinter.print_let(let, 0) for let in expr.func.body)
+            lambdaf = "\\"+lambda_args + " -> " + lambda_body + " " + FutharkPrinter.print_expr(expr.func.result)
+            ts =" " + " ".join([FutharkPrinter.print_expr(p) for p in expr.inputs])
+            mapN = f"map{'' if len(expr.inputs) == 1 else str(len(expr.inputs))}"
+            return (
+                f"{mapN} ({lambdaf}) {ts}"
             )
 
         raise NotImplementedError(f"Expression type: {type(expr)}")
@@ -261,7 +201,5 @@ def print_futhark(ast: Any) -> str:
     #    return FutharkPrinter.print_var(ast)
     if isinstance(ast, FutharkType):
         return FutharkPrinter.print_type(ast)
-    if isinstance(ast, VarExpr):
-        return FutharkPrinter.print_var(ast)
         
     raise TypeError(f"Unsupported AST node type: {type(ast)}")

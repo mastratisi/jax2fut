@@ -3,6 +3,9 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 from jax.core import Literal, JaxprEqn, Var as JaxprVar, ClosedJaxpr, Primitive, Jaxpr
+import enum
+
+
 
 from .futhark_ast import (
     FutharkType,
@@ -13,12 +16,20 @@ from .futhark_ast import (
     UnaryOp,
     BinaryOp,
     ArrayIndex,
-    ArrayOp,
     IfExpr,
+    MapExpr,
     Let,
     Function,
     Module,
 )
+
+# === Helper Types ===
+
+Input = VarExpr | LiteralExpr
+Handler = Callable[[List[Input], Dict[str, Any]], Expr]
+
+
+
 
 # === Type Translation ===
 
@@ -51,7 +62,12 @@ class TypeTranslator:
 
 
 # === utils/helpers for handlers ===
-
+class BroadcastEnum(enum.StrEnum):
+    elementwise = "a"
+    scalar_matrix = "b"
+    matrix_scalar = "c"
+    scalar_scalar = "d"
+    
 def is_elementwise(type1:FutharkType, type2:FutharkType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 == dims2 and dims1 != []
@@ -64,14 +80,29 @@ def is_matrix_scalar(type1:FutharkType, type2:FutharkType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 != dims2 and dims2 == []
 
+def is_scalar_scalar(type1:FutharkType, type2:FutharkType):
+    dims1, dims2 = type1.dims, type2.dims
+    return dims1 == [] and dims2 == []
+
+def get_broadcast_mode(type1:FutharkType, type2:FutharkType):
+    if is_elementwise(type1, type2):
+        return BroadcastEnum.elementwise
+    elif is_scalar_matrix(type1, type2):
+        return BroadcastEnum.scalar_matrix
+    elif is_matrix_scalar(type1, type2):
+        return BroadcastEnum.matrix_scalar
+    elif is_scalar_scalar(type1, type2):
+        return BroadcastEnum.scalar_scalar
+    else:
+        raise ValueError("Incompatible types for broadcasting: dimensions do not match")
     
 # === Advance Primitiv Handlers ===
 
-def handle_reduce_sum(inputs: List[Expr], params: Dict[str, Any]) -> Expr:
+def handle_reduce_sum(inputs: List[Input], params: Dict[str, Any]) -> Expr:
     axes = params["axes"]
     match axes:
         case (0,):
-            old_type = inputs[0].type
+            old_type = inputs[0].var.type
             new_base = old_type.base
             new_dim = old_type.dims[1:]
             return UnaryOp(op="sum", x=inputs[0], type=FutharkType(new_base, new_dim))
@@ -86,7 +117,7 @@ class PrimitiveHandler:
     """Handler for a specific JAX primitive."""
 
     name: str
-    handler: Callable[[List[Expr], Dict[str, Any]], Expr]
+    handler: Handler
 
 
 class PrimitiveTranslator:
@@ -99,7 +130,7 @@ class PrimitiveTranslator:
         
 
     def register_handler(
-        self, name: str, handler: Callable[[List[Expr], Dict[str, Any]], Expr]
+        self, name: str, handler: Handler
     ):
         """Register a new primitive handler."""
         self.handlers[name] = PrimitiveHandler(name, handler)
@@ -124,15 +155,33 @@ class PrimitiveTranslator:
         ]:
 
             def make_binary_handler(op_name: str):
-                def handler(inputs: List[Expr], params: Dict[str, Any]) -> Expr:
+                def handler(inputs: List[Input], params: Dict[str, Any]) -> Expr:
                     assert len(inputs) == 2
+                    match (inputs[0].type.dims, inputs[1].type.dims):
+                        case ([], []):
+                            return BinaryOp(
+                                op=op_name,
+                                x=inputs[0],
+                                y=inputs[1],
+                                type=inputs[0].type,  # Result type same as input type
+                            )
+                            
+                        case ([], [h, *t]):
+                            print("hej")
+                            fvar = Var("fvar", inputs[0].type)
+                            lexp = BinaryOp(op=op_name, x=inputs[0], y=VarExpr(fvar), type=inputs[0].type)
+                            lvar = Var("lvar", inputs[0].type) 
+                            let = Let(lvar, lexp)
+                            fexp = Function(name="lambda",
+                                            params=[fvar],
+                                            body = [let],
+                                            result= VarExpr(lvar))
+                            return MapExpr(fexp, [inputs[1]])
+                    raise Exception("lol")
+                             
+
                     
-                    return BinaryOp(
-                        op=op_name,
-                        x=inputs[0],
-                        y=inputs[1],
-                        type=inputs[0].type,  # Result type same as input type
-                    )
+                    
 
                 return handler
 
@@ -144,7 +193,7 @@ class PrimitiveTranslator:
                                ("neg", "neg"), ("sqrt", "sqrt")]:
 
             def make_unary_handler(op_name: str):
-                def handler(inputs: List[Expr], params: Dict[str, Any]) -> Expr:
+                def handler(inputs: List[VarExpr], params: Dict[str, Any]) -> Expr:
                     assert len(inputs) == 1
                     return UnaryOp(op=op_name, x=inputs[0], type=inputs[0].type)
 
@@ -153,7 +202,7 @@ class PrimitiveTranslator:
             self.register_handler(op, make_unary_handler(futhark_op))
 
     def translate_primitive(
-        self, primitive: Primitive, inputs: List[Expr], params: Dict[str, Any]
+        self, primitive: Primitive, inputs: List[Input], params: Dict[str, Any]
     ) -> Expr:
         """Translate a JAX primitive to a Futhark expression."""
         if primitive.name not in self.handlers:
@@ -173,29 +222,29 @@ class ExprTranslator:
     def __init__(self):
         self.type_translator = TypeTranslator()
         self.primitive_translator = PrimitiveTranslator()
-        self.env: Dict[JaxprVar, Union[Var, LiteralExpr]] = {}
+        self.env: Dict[JaxprVar, Var] = {}
 
     def translate_literal(self, lit: Literal) -> LiteralExpr:
         """Translate a JAX literal to a Futhark literal expression."""
         type_ = self.type_translator.aval_to_futhark_type(lit.aval)
         return LiteralExpr(value=lit.val, type=type_)
 
-    def translate_var(self, var: JaxprVar) -> Var | LiteralExpr:
+    def translate_var(self, var: JaxprVar) -> VarExpr:
         """Translate a JAX variable to a Futhark variable or literal."""
         if var not in self.env:
             type_ = self.type_translator.aval_to_futhark_type(var.aval)
             self.env[var] = Var(f"x{len(self.env)}", type_)
-        return self.env[var]
+        return VarExpr(self.env[var])
 
     def translate_eqn(self, eqn: JaxprEqn) -> List[Let]:
         """Translate a JAX equation to Futhark let bindings."""
         # Translate inputs
-        inputs : List[Expr]= []
+        inputs : List[VarExpr | LiteralExpr]= []
         for invar in eqn.invars:
             if isinstance(invar, Literal):
                 inputs.append(self.translate_literal(invar))
             else:
-                inputs.append(VarExpr(self.translate_var(invar)))
+                inputs.append(self.translate_var(invar))
 
         # Translate the primitive
         expr = self.primitive_translator.translate_primitive(
@@ -238,12 +287,12 @@ class FunctionTranslator:
             params.append(var)
 
         # Translate body
-        body = []
+        body : List[Let] = []
         for eqn in jaxpr.jaxpr.eqns:
             body.extend(self.expr_translator.translate_eqn(eqn))
 
         # Get result
-        result = VarExpr(self.expr_translator.translate_var(jaxpr.jaxpr.outvars[0]))
+        result = self.expr_translator.translate_var(jaxpr.jaxpr.outvars[0])
 
         return Function(name=name, params=params, body=body, result=result)
 

@@ -1,6 +1,7 @@
 from typing import List, Any, Dict, Union, Optional
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+import dataclasses
 
 # === Base Types ===
 
@@ -73,6 +74,10 @@ class VarExpr(Expr):
 
     var: Var
 
+    @property
+    def type(self):
+        return self.var.type
+
     def __init__(self, var: Var) -> None:
         assert isinstance(var, Var), f"Expected Var, got {type(var).__name__}"
         self.var = var
@@ -119,20 +124,6 @@ class ArrayIndex(Expr):
 
 
 @dataclass
-class ArrayOp(Expr):
-    """Represents array operations like map, reduce, scan."""
-
-    op: str  # e.g. "map", "reduce", "scan"
-    f: "Function"  # Function to apply
-    array: Expr
-    type: FutharkType
-    neutral: Optional[Expr] = None  # For reduce/scan
-
-    def __repr__(self) -> str:
-        return f"ArrayOp(op='{self.op}', f={repr(self.f)}, array={repr(self.array)}, type={repr(self.type)})"
-
-
-@dataclass
 class IfExpr(Expr):
     """Represents a conditional expression."""
 
@@ -145,19 +136,17 @@ class IfExpr(Expr):
         return f"IfExpr(cond={repr(self.cond)}, true_branch={repr(self.true_branch)}, false_branch={repr(self.false_branch)}, type={repr(self.type)})"
 
 
+@dataclass
+class MapExpr(Expr):
+    func: "Function"
+    inputs: List[VarExpr | LiteralExpr]
+    def __repr__(self) -> str:
+        return "maplol"
+    
 # === Statement Nodes ===
 
-
-class Stmt(ABC):
-    """Base class for all Futhark statements."""
-
-    @abstractmethod
-    def __repr__(self) -> str:
-        pass
-
-
 @dataclass
-class Let(Stmt):
+class Let:
     """Represents a let binding."""
 
     var: Var
@@ -173,9 +162,9 @@ class Function:
 
     name: str
     params: List[Var]
-    body: List[Stmt]
-    result: Expr
-    type_params: List[str] = []  # For polymorphic functions
+    body: List[Let]
+    result: VarExpr
+    type_params: List[str] = dataclasses.field(default_factory=list)  # For polymorphic functions
 
     def __repr__(self) -> str:
         return (
