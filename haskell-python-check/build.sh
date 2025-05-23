@@ -9,12 +9,21 @@ python3-config --prefix
 python3-config --includes
 python3-config --ldflags
 
+# Create the haskell_transpiler_src directory if it doesn't exist
+mkdir -p haskell_transpiler_src/HaskellTranspiler
+
+# Build the shared library
 ghc -O2 --make \
     -no-hs-main \
     -optl '-shared' \
-    -optc '-DMODULE=Test' \
+    -optc '-DMODULE=HaskellInterface' \
     $PYTHON_INCLUDES \
     $PYTHON_LDFLAGS \
-    -o Test.so Test.hs module_init.c
+    -i. \
+    -ihaskell_transpiler_src \
+    -o haskell_interface.so haskell_interface.hs
 
-rm -f *.hi *.h *.o Test_stub.c
+# Clean up
+rm -f *.hi *.h *.o HaskellInterface_stub.c
+rm -f haskell_transpiler_src/*.hi haskell_transpiler_src/*.h haskell_transpiler_src/*.o
+rm -f haskell_transpiler_src/HaskellTranspiler/*.hi haskell_transpiler_src/HaskellTranspiler/*.h haskell_transpiler_src/HaskellTranspiler/*.o
