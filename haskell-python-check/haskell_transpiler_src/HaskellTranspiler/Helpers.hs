@@ -5,6 +5,8 @@ import Foreign.C.Types
 import Foreign.C.String
 import Foreign.Ptr
 import Foreign.Marshal.Alloc
+import Foreign.Marshal.Array
+import Foreign.Storable
 import Control.Exception (bracket)
 
 -- Import Python C API functions
@@ -13,6 +15,7 @@ foreign import ccall "Python.h Py_Finalize" pyFinalize :: IO ()
 foreign import ccall "Python.h PyGILState_Ensure" pyGILStateEnsure :: IO CInt
 foreign import ccall "Python.h PyGILState_Release" pyGILStateRelease :: CInt -> IO ()
 foreign import ccall "Python.h PyObject_GetAttrString" pyGetAttrString :: Ptr () -> CString -> IO (Ptr ())
+foreign import ccall "Python.h PyObject_SetAttrString" pySetAttrString :: Ptr () -> CString -> Ptr () -> IO CInt
 foreign import ccall "Python.h PyObject_IsTrue" pyObjectIsTrue :: Ptr () -> IO CInt
 foreign import ccall "Python.h Py_DecRef" pyDecRef :: Ptr () -> IO ()
 foreign import ccall "Python.h Py_IncRef" pyIncRef :: Ptr () -> IO ()
@@ -24,6 +27,9 @@ foreign import ccall "Python.h PyObject_GetIter" pyObjectGetIter :: Ptr () -> IO
 foreign import ccall "Python.h PyIter_Next" pyIterNext :: Ptr () -> IO (Ptr ())
 foreign import ccall "Python.h PyObject_GetAttr" pyObjectGetAttr :: Ptr () -> Ptr () -> IO (Ptr ())
 foreign import ccall "Python.h PyLong_AsLong" pyLongAsLong :: Ptr () -> IO CLong
+foreign import ccall "PyList_Size" pyListSize :: Ptr () -> IO CInt
+foreign import ccall "PyList_GetItem" pyListGetItem :: Ptr () -> CInt -> IO (Ptr ())
+foreign import ccall "PyUnicode_AsUTF8" pyUnicodeAsUTF8 :: Ptr () -> IO CString
 
 -- Safe wrapper for GIL management
 withGIL :: IO a -> IO a

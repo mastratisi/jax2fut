@@ -6,6 +6,7 @@ module HaskellInterface (
     addTenFloatWithAdd,
     appendWorld,
     traverseTreeBFS,
+    traverseJaxpr,
     checkPythonAttr,
     hsInitPython,
     hsCleanupPython
@@ -17,6 +18,7 @@ import Foreign.Ptr
 import qualified HaskellTranspiler.Helpers as H
 import qualified HaskellTranspiler.Math as M
 import qualified HaskellTranspiler.Tree as T
+import qualified HaskellTranspiler.Jaxpr as J
 
 -- Re-export functions from Math module
 addFortyTwo :: CInt -> IO CInt
@@ -34,6 +36,10 @@ appendWorld = M.appendWorld
 -- Re-export functions from Tree module
 traverseTreeBFS :: Ptr () -> IO (Ptr ())
 traverseTreeBFS = T.traverseTreeBFS
+
+-- Re-export functions from Jaxpr module
+traverseJaxpr :: Ptr () -> IO CInt
+traverseJaxpr = J.traverseJaxpr
 
 -- Check if a Python object has a specific attribute
 checkPythonAttr :: Ptr () -> CString -> IO CInt
@@ -72,6 +78,9 @@ foreign export ccall
 
 foreign export ccall
     traverseTreeBFS :: Ptr () -> IO (Ptr ())
+
+foreign export ccall
+    traverseJaxpr :: Ptr () -> IO CInt
 
 foreign export ccall
     checkPythonAttr :: Ptr () -> CString -> IO CInt 
