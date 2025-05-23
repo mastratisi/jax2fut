@@ -5,6 +5,9 @@ import ctypes
 lib = cdll.LoadLibrary("./Test.so")
 lib.hs_init(None, None)
 
+# Initialize Python in Haskell
+lib.hs_init_python()
+
 
 # Define a test class
 class TestObject:
@@ -64,7 +67,7 @@ try:
     obj_with_attr = TestObject(has_attr=True)
     obj_without_attr = TestObject(has_attr=False)
 
-    # Get the Python object's memory address
+    # Get the Python object's memory address and increment its reference count
     obj_with_attr_ptr = cast(id(obj_with_attr), c_void_p)
     obj_without_attr_ptr = cast(id(obj_without_attr), c_void_p)
 
@@ -85,5 +88,7 @@ try:
     print(f"Object with some_other_attr: {bool(result)}")
 
 finally:
+    # Cleanup Python in Haskell
+    lib.hs_cleanup_python()
     # Cleanup Haskell RTS
     lib.hs_exit()
