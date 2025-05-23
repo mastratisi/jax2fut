@@ -1,10 +1,20 @@
-ghc -O2 --make \
-      -no-hs-main -optl '-shared' -optc '-DMODULE=Test' \
-      -optl '-L/opt/homebrew/opt/python@3.13/Frameworks/Python.framework/Versions/3.13/lib/python3.13/config-3.13-darwin' \
-      -optl '-lpython3.13' \
-      -optl '-ldl' \
-      -framework CoreFoundation \
-      -o Test.so Test.hs module_init.c
+#!/bin/bash
 
-rm *.hi *.h *.o
-rm Test_stub.c
+PYTHON_INCLUDES=$(python3-config --includes)
+PYTHON_LDFLAGS=$(python3-config --ldflags)
+
+# Debug output
+python3 --version
+python3-config --prefix
+python3-config --includes
+python3-config --ldflags
+
+ghc -O2 --make \
+    -no-hs-main \
+    -optl '-shared' \
+    -optc '-DMODULE=Test' \
+    $PYTHON_INCLUDES \
+    $PYTHON_LDFLAGS \
+    -o Test.so Test.hs module_init.c
+
+rm -f *.hi *.h *.o Test_stub.c
