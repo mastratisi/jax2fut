@@ -9,10 +9,17 @@ import enum
 
 from .futhark_ast import (
     FutharkType,
+    TensorType,
+    FuncType,
     Var,
     Expr,
     LiteralExpr,
     VarExpr,
+    LetExpr,
+    LambdaExpr,
+    FAppExpr,
+    LetExpr,
+    LambdaExpr,
     UnaryOp,
     BinaryOp,
     ArrayIndex,
@@ -27,6 +34,8 @@ from .futhark_ast import (
 
 Input = VarExpr | LiteralExpr
 Handler = Callable[[List[Input], Dict[str, Any]], Expr]
+
+
 
 
 
@@ -52,11 +61,11 @@ class TypeTranslator:
         return dtype_map[dtype_str]
 
     @staticmethod
-    def aval_to_futhark_type(aval) -> FutharkType:
+    def aval_to_futhark_type(aval) -> TensorType:
         """Convert JAX abstract value to Futhark type."""
         base = TypeTranslator.jax_dtype_to_futhark(str(aval.dtype))
         dims = list(aval.shape)
-        return FutharkType(base=base, dims=dims)
+        return TensorType(base=base, dims=dims)
 
 
 
@@ -68,23 +77,23 @@ class BroadcastEnum(enum.StrEnum):
     matrix_scalar = "c"
     scalar_scalar = "d"
     
-def is_elementwise(type1:FutharkType, type2:FutharkType):
+def is_elementwise(type1:TensorType, type2:TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 == dims2 and dims1 != []
 
-def is_scalar_matrix(type1:FutharkType, type2:FutharkType):
+def is_scalar_matrix(type1:TensorType, type2:TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 != dims2 and dims1 == []
 
-def is_matrix_scalar(type1:FutharkType, type2:FutharkType):
+def is_matrix_scalar(type1:TensorType, type2:TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 != dims2 and dims2 == []
 
-def is_scalar_scalar(type1:FutharkType, type2:FutharkType):
+def is_scalar_scalar(type1:TensorType, type2:TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 == [] and dims2 == []
 
-def get_broadcast_mode(type1:FutharkType, type2:FutharkType):
+def get_broadcast_mode(type1:TensorType, type2:TensorType):
     if is_elementwise(type1, type2):
         return BroadcastEnum.elementwise
     elif is_scalar_matrix(type1, type2):
@@ -95,6 +104,31 @@ def get_broadcast_mode(type1:FutharkType, type2:FutharkType):
         return BroadcastEnum.scalar_scalar
     else:
         raise ValueError("Incompatible types for broadcasting: dimensions do not match")
+
+
+def map2_expr(f:Expr, lhs:Expr, rhs:Expr):
+    # TODO
+    return FAppExpr("map2", [f, lhs, rhs])
+
+def replicate_expr(n:Expr, xs:Expr):
+    return FAppExpr("replicate", [n, xs])
+
+
+def automap1(unop:Expr, a:Expr):
+    return 0
+    
+
+def automap2(binop:Expr, rhs, lhs):
+    def maprep(rem_rhs, rem_lhs, expr):
+        cur_lhs = rem_lhs[-1] if rem_lhs else 1
+        cur_rhs = rem_rhs[-1] if rem_rhs else 1
+        if cur_lhs == cur_rhs:
+            return map2_expr
+            
+            
+            
+
+    
     
 # === Advance Primitiv Handlers ===
 
@@ -105,7 +139,7 @@ def handle_reduce_sum(inputs: List[Input], params: Dict[str, Any]) -> Expr:
             old_type = inputs[0].var.type
             new_base = old_type.base
             new_dim = old_type.dims[1:]
-            return UnaryOp(op="sum", x=inputs[0], type=FutharkType(new_base, new_dim))
+            return UnaryOp(op="sum", x=inputs[0], type=TensorType(new_base, new_dim))
     raise Exception("axes shape not implemented in handle_reduce_sum")
     
 
@@ -159,6 +193,7 @@ class PrimitiveTranslator:
                     assert len(inputs) == 2
                     match (inputs[0].type.dims, inputs[1].type.dims):
                         case ([], []):
+                            
                             return BinaryOp(
                                 op=op_name,
                                 x=inputs[0],
@@ -167,7 +202,6 @@ class PrimitiveTranslator:
                             )
                             
                         case ([], [h, *t]):
-                            print("hej")
                             fvar = Var("fvar", inputs[0].type)
                             lexp = BinaryOp(op=op_name, x=inputs[0], y=VarExpr(fvar), type=inputs[0].type)
                             lvar = Var("lvar", inputs[0].type) 

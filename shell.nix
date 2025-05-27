@@ -19,11 +19,13 @@ let my-python = pkgs.python3;
     ]);
     haskell = pkgs.haskellPackages.ghcWithPackages (pkgs: with pkgs; [
       haskell-language-server
-      
-    ]);in
+      cpython      
+    ]);
+in
 pkgs.mkShell {
   buildInputs = [
     python-with-my-packages
+    pkgs.pkg-config
     pkgs.jupyter
     pkgs.gdb
     pkgs.futhark

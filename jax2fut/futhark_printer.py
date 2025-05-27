@@ -2,10 +2,15 @@ from typing import List, Any, Dict, Union
 from dataclasses import dataclass
 from .futhark_ast import (
     FutharkType,
+    TensorType,
+    FuncType,
     Var,
     Expr,
     LiteralExpr,
     VarExpr,
+    LetExpr,
+    LambdaExpr,
+    FAppExpr,
     UnaryOp,
     BinaryOp,
     ArrayIndex,
@@ -36,11 +41,17 @@ def jax_dtype_to_futhark(dtype) -> str:
     raise NotImplementedError(f"dtype {dtype}")
 
 
-def aval_to_futhark_type(aval) -> FutharkType:
+def aval_to_futhark_type(aval) -> TensorType:
     base = jax_dtype_to_futhark(aval.dtype)
     dims = list(aval.shape)
     return FutharkType(base, dims)
 
+
+def atomOrWithParans(e : Expr) -> str:
+    if isinstance(expr, VarExpr) or isinstance(expr, LiteralExpr):
+        return FutharkPrinter.print_expr(e)
+    else:
+        return f"({FutharkPrinter.print_expr(e)})"
 
 # === 4) Pretty-printer for the AST ===
 
@@ -112,6 +123,21 @@ class FutharkPrinter:
 
         if isinstance(expr, VarExpr):
             return expr.var.name
+
+        if isinstance(expr, LetExpr):
+           letVar = expr.letVar.name
+           inExpr = FutharkPrinter.print_expr(expr.inExpr)
+           return f"let {letVar} in {inExpr}"
+
+        if isinstance(expr, LambdaExpr):
+           params = [FutharkPrinter.print_expr(name) for name in expr.params]
+           params = " ".join(params)
+           body = FutharkPrinter.print_expr(expr.body)
+           return f"\\{params} -> {body}"
+
+        if isinstance(expr, FAppExpr):
+           fapp = [atomOrWithParans(funcOrArg) for funcOrArg in [expr.func] + expr.args]
+           return " ".join(fapp) 
 
         if isinstance(expr, UnaryOp):
             return f"{expr.x.type.base}.{expr.op}({FutharkPrinter.print_expr(expr.x)})"

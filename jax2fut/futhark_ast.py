@@ -1,14 +1,13 @@
 from typing import List, Any, Dict, Union, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 import dataclasses
 
 # === Base Types ===
 
-
 @dataclass
-class FutharkType:
-    """Represents a Futhark type with base type and dimensions."""
+class TensorType:
+    """Represents a Futhark scalar or array type with base type and dimensions."""
 
     base: str  # e.g. "f32", "i32", "bool"
     dims: List[int]  # e.g. [5] for [5]f32
@@ -21,10 +20,10 @@ class FutharkType:
         return f"{dims_str}{mut_str}{self.base}"
 
     def __repr__(self) -> str:
-        return f"FutharkType(base='{self.base}', dims={self.dims}, is_mutable={self.is_mutable})"
+        return f"TensorType(base='{self.base}', dims={self.dims}, is_mutable={self.is_mutable})"
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, FutharkType):
+        if not isinstance(other, TensorType):
             return False
         return (
             self.base == other.base
@@ -32,6 +31,39 @@ class FutharkType:
             and self.is_mutable == other.is_mutable
         )
 
+@dataclass
+class FuncType:
+    """Represents a Futhark function type with a signature"""
+    signature : List["FutharkType"]
+    def __str__(self) -> str:
+        sigs = [str(sig) for sig in signature]
+        return " -> ".join(sigs)
+
+    def __repr__(self) -> str:
+        return f"FuncType(signature: {str(self)})"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, FuncType):
+            return False
+        else:
+            self.signature == other.signature
+    
+FutharkType = TensorType | FuncType
+
+def is_tensor_type(t:FutharkType):
+    return isinstance(t, TensorType)
+
+def is_firstorder_type(t:FutharkType):
+    if not isinstance(t, FuncType):
+        return False
+    return all(map(is_tensor, t.signature))
+    
+
+def tensorOrWithParans(t:FutharkType) -> str:
+    if isinstance(t, TensorType):
+        return repr(t)
+    else:
+        return f"({repr(t)})"
 
 @dataclass
 class Var:
@@ -62,7 +94,7 @@ class LiteralExpr(Expr):
     """Represents a literal value."""
 
     value: Any
-    type: FutharkType
+    type: TensorType
 
     def __repr__(self) -> str:
         return f"LiteralExpr(value={repr(self.value)}, type={repr(self.type)})"
@@ -84,6 +116,44 @@ class VarExpr(Expr):
 
     def __repr__(self) -> str:
         return f"VarExpr(var={repr(self.var)})"
+
+@dataclass
+class LetExpr(Expr):
+    """Represents a let expression"""
+    letVar: Var
+    letExpr : Expr
+    inExpr : Expr
+
+    def __repr__(self) -> str:
+        return f"LetExpr(let {repr(self.letVar)} = {repr(self.letExpr)}, in={repr(self.inExpr)})"
+    
+@dataclass
+class LambdaExpr(Expr):
+    type: FuncType = field(init=False)
+    params: List[VarExpr]
+    body : Expr
+
+    def __post_init__(self):
+        param_types = [p.type for p in self.params]
+        return_type = self.body.type
+        self.type = FuncType(signature=param_types + [return_type])
+    
+    
+    def __repr__(self) -> str:
+        str_params = " ".join([tensorOrWithParans(p) for p in self.params])
+        str_body = repr(self.body)
+        return f"LambdaExpr(params={str_params}, body={str_body})"
+
+
+@dataclass
+class FAppExpr(Expr):
+    type: FutharkType
+    func: Expr
+    args: List[Expr]
+    def __repr__(self) -> str:
+        str_args = " ".join([repr(p) for p in self.params])
+        str_func = repr(self.func)
+        return f"LambdaExpr(func={str_func}, params={str_args})"
 
 
 @dataclass
@@ -136,12 +206,15 @@ class IfExpr(Expr):
         return f"IfExpr(cond={repr(self.cond)}, true_branch={repr(self.true_branch)}, false_branch={repr(self.false_branch)}, type={repr(self.type)})"
 
 
+    
 @dataclass
 class MapExpr(Expr):
     func: "Function"
     inputs: List[VarExpr | LiteralExpr]
     def __repr__(self) -> str:
         return "maplol"
+
+
     
 # === Statement Nodes ===
 
