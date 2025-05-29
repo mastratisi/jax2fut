@@ -5,8 +5,6 @@ import jax.numpy as jnp
 from jax.core import Literal, JaxprEqn, Var as JaxprVar, ClosedJaxpr, Primitive, Jaxpr
 import enum
 
-
-
 from .futhark_ast import (
     FutharkType,
     TensorType,
@@ -106,9 +104,6 @@ def get_broadcast_mode(type1:TensorType, type2:TensorType):
         raise ValueError("Incompatible types for broadcasting: dimensions do not match")
 
 
-def map2_expr(f:Expr, lhs:Expr, rhs:Expr):
-    # TODO
-    return FAppExpr("map2", [f, lhs, rhs])
 
 def replicate_expr(n:Expr, xs:Expr):
     return FAppExpr("replicate", [n, xs])
@@ -119,7 +114,7 @@ def automap1(unop:Expr, a:Expr):
     
 
 def automap2(binop:Expr, rhs, lhs):
-    def maprep(rem_rhs, rem_lhs, expr):
+    def maprep(rem_lhs, rem_rhs, expr):
         cur_lhs = rem_lhs[-1] if rem_lhs else 1
         cur_rhs = rem_rhs[-1] if rem_rhs else 1
         if cur_lhs == cur_rhs:

@@ -47,12 +47,6 @@ def aval_to_futhark_type(aval) -> TensorType:
     return FutharkType(base, dims)
 
 
-def atomOrWithParans(e : Expr) -> str:
-    if isinstance(expr, VarExpr) or isinstance(expr, LiteralExpr):
-        return FutharkPrinter.print_expr(e)
-    else:
-        return f"({FutharkPrinter.print_expr(e)})"
-
 # === 4) Pretty-printer for the AST ===
 
 
@@ -95,6 +89,13 @@ def print_function(fn: Function) -> str:
         + f"  in {result_name}"
     )
 
+
+
+def atomOrWithParans(e : Expr) -> str:
+    if isinstance(expr, VarExpr) or isinstance(expr, LiteralExpr):
+        return FutharkPrinter.print_expr(e)
+    else:
+        return f"({FutharkPrinter.print_expr(e)})"
 
 class FutharkPrinter:
     """Pretty printer for Futhark AST nodes."""
