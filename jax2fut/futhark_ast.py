@@ -5,6 +5,7 @@ import dataclasses
 
 # === Base Types ===
 
+
 @dataclass
 class TensorType:
     """Represents a Futhark scalar or array type with base type and dimensions."""
@@ -31,10 +32,13 @@ class TensorType:
             and self.is_mutable == other.is_mutable
         )
 
+
 @dataclass
 class FuncType:
     """Represents a Futhark function type with a signature"""
-    signature : List["FutharkType"]
+
+    signature: List["FutharkType"]
+
     def __str__(self) -> str:
         sigs = [str(sig) for sig in signature]
         return " -> ".join(sigs)
@@ -47,33 +51,37 @@ class FuncType:
             return False
         else:
             self.signature == other.signature
-    
+
+
 FutharkType = TensorType | FuncType
 
-def is_tensor_type(t:FutharkType):
+
+def is_tensor_type(t: FutharkType):
     return isinstance(t, TensorType)
 
-def is_array_type(t:FutharkType):
+
+def is_array_type(t: FutharkType):
     return is_tensor_type(t) and t.dims
 
 
-def is_func_type(t:FutharkType):
-    return isinstance(t, FuncType):
-    
+def is_func_type(t: FutharkType):
+    return isinstance(t, FuncType)
 
-def is_firstorder_type(t:FutharkType):
+
+def is_firstorder_type(t: FutharkType):
     if not is_func_type(t):
         return False
     return all(map(is_tensor, t.signature))
 
 
-def tensorOrWithParans(t:FutharkType) -> str:
+def tensorOrWithParans(t: FutharkType) -> str:
     if isinstance(t, TensorType):
         return repr(t)
     else:
         return f"({repr(t)})"
 
-def lift_type(t:TensorType, n:int) -> TensorType:
+
+def lift_type(t: TensorType, n: int) -> TensorType:
     return TensorType(t.base, [n] + t.dims)
 
 
@@ -129,28 +137,30 @@ class VarExpr(Expr):
     def __repr__(self) -> str:
         return f"VarExpr(var={repr(self.var)})"
 
+
 @dataclass
 class LetExpr(Expr):
     """Represents a let expression"""
+
     letVar: Var
-    letExpr : Expr
-    inExpr : Expr
+    letExpr: Expr
+    inExpr: Expr
 
     def __repr__(self) -> str:
         return f"LetExpr(let {repr(self.letVar)} = {repr(self.letExpr)}, in={repr(self.inExpr)})"
-    
+
+
 @dataclass
 class LambdaExpr(Expr):
     params: List[VarExpr]
-    body : Expr
+    body: Expr
     type: FuncType = field(init=False)
 
     def __post_init__(self):
         param_types = [p.type for p in self.params]
         return_type = self.body.type
         self.type = FuncType(signature=param_types + [return_type])
-    
-    
+
     def __repr__(self) -> str:
         str_params = " ".join([tensorOrWithParans(p) for p in self.params])
         str_body = repr(self.body)
@@ -162,6 +172,7 @@ class FAppExpr(Expr):
     func: Expr
     args: List[Expr]
     type: FutharkType = field(init=False)
+
     def __repr__(self) -> str:
         str_args = " ".join([repr(p) for p in self.params])
         str_func = repr(self.func)
@@ -172,7 +183,7 @@ class FAppExpr(Expr):
         func_type = self.func.type
         return_type = func_type.signature[-1]
         param_types = func_type.signature[:-1]
-        args_types = list(map(lambda exp: exp.type, args))
+        args_types = list(map(lambda exp: exp.type, self.args))
         assert param_types == args_types
         self.type = return_type
 
@@ -227,36 +238,39 @@ class IfExpr(Expr):
         return f"IfExpr(cond={repr(self.cond)}, true_branch={repr(self.true_branch)}, false_branch={repr(self.false_branch)}, type={repr(self.type)})"
 
 
-    
 @dataclass
 class MapExpr(Expr):
     func: "Function"
     inputs: List[VarExpr | LiteralExpr]
+
     def __repr__(self) -> str:
         return "maplol"
 
 
-# === Expr Composites === 
+# === Expr Composites ===
 
 
-def mapN_expr(f:Expr, args:List[Expr]):
+def mapN_expr(f: Expr, args: List[Expr]):
     assert is_func_type(f)
-    assert all(map(is_array_type, args)
+    assert all(map(is_array_type, args))
     assert all(map(lambda arg: arg.type == args[0].type))
     N = len(f.type.signature) - 1
     n = args[0].type.dims[0]
-    #Note we want (a -> b) -> []a -> []b not a->b->[]a->[]b
+    # Note we want (a -> b) -> []a -> []b not a->b->[]a->[]b
     new_signature = [f.type] + list(map(lambda t: lift_type(t, n), f.type.signature))
-    mapN = VarExpr(Var(f"map{N}", FuncType(new_signature))
+    mapN = VarExpr(Var(f"map{N}", FuncType(new_signature)))
     return FAppExpr(mapN, [f] + args)
-    
-def map1_expr(f:Expr, xs:Expr):
+
+
+def map1_expr(f: Expr, xs: Expr):
     return mapN_expr(f, [xs])
-    
-def map2_expr(f:Expr, lhs:Expr, rhs:Expr):
+
+
+def map2_expr(f: Expr, lhs: Expr, rhs: Expr):
     return mapN_expr(f, [lhs, rhs])
 
-def replicate_expr(n:int, xs:Expr)
+
+def replicate_expr(n: int, xs: Expr):
     assert is_tensor_type(xs)
     n_type = TensorType("i64", [])
     n_expr = LiteralExpr(n, n_type)
@@ -265,8 +279,9 @@ def replicate_expr(n:int, xs:Expr)
     rep = VarExpr(Var("replicate"), rep_type)
     return FAppExpr(rep, [n_expr, xs])
 
-    
+
 # === Statement Nodes ===
+
 
 @dataclass
 class Let:
@@ -287,7 +302,9 @@ class Function:
     params: List[Var]
     body: List[Let]
     result: VarExpr
-    type_params: List[str] = dataclasses.field(default_factory=list)  # For polymorphic functions
+    type_params: List[str] = dataclasses.field(
+        default_factory=list
+    )  # For polymorphic functions
 
     def __repr__(self) -> str:
         return (

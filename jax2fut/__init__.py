@@ -4,7 +4,7 @@ This package provides tools to translate JAX expressions to Futhark code.
 The translation preserves types and semantics while generating idiomatic Futhark code.
 """
 
-from .futhark_ast import (
+from futhark_ast import (
     FutharkType,
     Var,
     Expr,
@@ -14,11 +14,8 @@ from .futhark_ast import (
     BinaryOp,
     ArrayIndex,
     IfExpr,
-    Let,
-    Function,
-    Module,
 )
-from .jaxpr_translator import (
+from jaxpr_translator import (
     jaxpr_to_futhark,
     jaxprs_to_futhark_module,
     TypeTranslator,
@@ -27,7 +24,7 @@ from .jaxpr_translator import (
     FunctionTranslator,
     ModuleTranslator,
 )
-from .futhark_printer import print_futhark
+from futhark_printer import futhark_codegen
 
 __all__ = [
     # AST nodes
@@ -40,9 +37,6 @@ __all__ = [
     "BinaryOp",
     "ArrayIndex",
     "IfExpr",
-    "Let",
-    "Function",
-    "Module",
     # Translators
     "jaxpr_to_futhark",
     "jaxprs_to_futhark_module",
@@ -52,5 +46,5 @@ __all__ = [
     "FunctionTranslator",
     "ModuleTranslator",
     # Printer
-    "print_futhark",
+    "futhark_codegen",
 ]

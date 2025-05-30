@@ -2,10 +2,17 @@ from typing import List, Dict, Any, Union, Optional, Callable
 from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
-from jax.core import Literal, JaxprEqn, Var as JaxprVar, ClosedJaxpr, Primitive, Jaxpr
+from jax.extend.core import (
+    Literal,
+    JaxprEqn,
+    Var as JaxprVar,
+    ClosedJaxpr,
+    Primitive,
+    Jaxpr,
+)
 import enum
 
-from .futhark_ast import (
+from futhark_ast import (
     FutharkType,
     TensorType,
     FuncType,
@@ -32,10 +39,6 @@ from .futhark_ast import (
 
 Input = VarExpr | LiteralExpr
 Handler = Callable[[List[Input], Dict[str, Any]], Expr]
-
-
-
-
 
 
 # === Type Translation ===
@@ -66,32 +69,35 @@ class TypeTranslator:
         return TensorType(base=base, dims=dims)
 
 
-
-
 # === utils/helpers for handlers ===
 class BroadcastEnum(enum.StrEnum):
     elementwise = "a"
     scalar_matrix = "b"
     matrix_scalar = "c"
     scalar_scalar = "d"
-    
-def is_elementwise(type1:TensorType, type2:TensorType):
+
+
+def is_elementwise(type1: TensorType, type2: TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 == dims2 and dims1 != []
 
-def is_scalar_matrix(type1:TensorType, type2:TensorType):
+
+def is_scalar_matrix(type1: TensorType, type2: TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 != dims2 and dims1 == []
 
-def is_matrix_scalar(type1:TensorType, type2:TensorType):
+
+def is_matrix_scalar(type1: TensorType, type2: TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 != dims2 and dims2 == []
 
-def is_scalar_scalar(type1:TensorType, type2:TensorType):
+
+def is_scalar_scalar(type1: TensorType, type2: TensorType):
     dims1, dims2 = type1.dims, type2.dims
     return dims1 == [] and dims2 == []
 
-def get_broadcast_mode(type1:TensorType, type2:TensorType):
+
+def get_broadcast_mode(type1: TensorType, type2: TensorType):
     if is_elementwise(type1, type2):
         return BroadcastEnum.elementwise
     elif is_scalar_matrix(type1, type2):
@@ -104,28 +110,24 @@ def get_broadcast_mode(type1:TensorType, type2:TensorType):
         raise ValueError("Incompatible types for broadcasting: dimensions do not match")
 
 
-
-def replicate_expr(n:Expr, xs:Expr):
+def replicate_expr(n: Expr, xs: Expr):
     return FAppExpr("replicate", [n, xs])
 
 
-def automap1(unop:Expr, a:Expr):
+def automap1(unop: Expr, a: Expr):
     return 0
-    
 
-def automap2(binop:Expr, rhs, lhs):
+
+def automap2(binop: Expr, rhs, lhs):
     def maprep(rem_lhs, rem_rhs, expr):
         cur_lhs = rem_lhs[-1] if rem_lhs else 1
         cur_rhs = rem_rhs[-1] if rem_rhs else 1
         if cur_lhs == cur_rhs:
             return map2_expr
-            
-            
-            
 
-    
-    
+
 # === Advance Primitiv Handlers ===
+
 
 def handle_reduce_sum(inputs: List[Input], params: Dict[str, Any]) -> Expr:
     axes = params["axes"]
@@ -136,7 +138,7 @@ def handle_reduce_sum(inputs: List[Input], params: Dict[str, Any]) -> Expr:
             new_dim = old_type.dims[1:]
             return UnaryOp(op="sum", x=inputs[0], type=TensorType(new_base, new_dim))
     raise Exception("axes shape not implemented in handle_reduce_sum")
-    
+
 
 # === Primitive Translation ===
 
@@ -156,11 +158,8 @@ class PrimitiveTranslator:
         self.handlers: Dict[str, PrimitiveHandler] = {}
         self._register_default_handlers()
         self.register_handler("reduce_sum", handle_reduce_sum)
-        
 
-    def register_handler(
-        self, name: str, handler: Handler
-    ):
+    def register_handler(self, name: str, handler: Handler):
         """Register a new primitive handler."""
         self.handlers[name] = PrimitiveHandler(name, handler)
 
@@ -188,38 +187,45 @@ class PrimitiveTranslator:
                     assert len(inputs) == 2
                     match (inputs[0].type.dims, inputs[1].type.dims):
                         case ([], []):
-                            
                             return BinaryOp(
                                 op=op_name,
                                 x=inputs[0],
                                 y=inputs[1],
                                 type=inputs[0].type,  # Result type same as input type
                             )
-                            
+
                         case ([], [h, *t]):
                             fvar = Var("fvar", inputs[0].type)
-                            lexp = BinaryOp(op=op_name, x=inputs[0], y=VarExpr(fvar), type=inputs[0].type)
-                            lvar = Var("lvar", inputs[0].type) 
+                            lexp = BinaryOp(
+                                op=op_name,
+                                x=inputs[0],
+                                y=VarExpr(fvar),
+                                type=inputs[0].type,
+                            )
+                            lvar = Var("lvar", inputs[0].type)
                             let = Let(lvar, lexp)
-                            fexp = Function(name="lambda",
-                                            params=[fvar],
-                                            body = [let],
-                                            result= VarExpr(lvar))
+                            fexp = Function(
+                                name="lambda",
+                                params=[fvar],
+                                body=[let],
+                                result=VarExpr(lvar),
+                            )
                             return MapExpr(fexp, [inputs[1]])
                     raise Exception("lol")
-                             
-
-                    
-                    
 
                 return handler
 
             self.register_handler(op, make_binary_handler(futhark_op))
 
         # Unary operations
-        for op, futhark_op in [("sin", "sin"), ("cos", "cos"),
-                               ("exp", "exp"), ("log", "log"),
-                               ("neg", "neg"), ("sqrt", "sqrt")]:
+        for op, futhark_op in [
+            ("sin", "sin"),
+            ("cos", "cos"),
+            ("exp", "exp"),
+            ("log", "log"),
+            ("neg", "neg"),
+            ("sqrt", "sqrt"),
+        ]:
 
             def make_unary_handler(op_name: str):
                 def handler(inputs: List[VarExpr], params: Dict[str, Any]) -> Expr:
@@ -241,7 +247,6 @@ class PrimitiveTranslator:
         return self.handlers[primitive.name].handler(inputs, params)
 
 
-    
 # === Expression Translation ===
 
 
@@ -268,7 +273,7 @@ class ExprTranslator:
     def translate_eqn(self, eqn: JaxprEqn) -> List[Let]:
         """Translate a JAX equation to Futhark let bindings."""
         # Translate inputs
-        inputs : List[VarExpr | LiteralExpr]= []
+        inputs: List[VarExpr | LiteralExpr] = []
         for invar in eqn.invars:
             if isinstance(invar, Literal):
                 inputs.append(self.translate_literal(invar))
@@ -299,11 +304,15 @@ class FunctionTranslator:
 
     def __init__(self):
         self.expr_translator = ExprTranslator()
+        self.is_entry_point = False
 
-    def translate_function(self, jaxpr: ClosedJaxpr, name: str = "f") -> Function:
+    def translate_function(
+        self, jaxpr: ClosedJaxpr, name: str = "f", is_entry_point: bool = False
+    ) -> Function:
         """Translate a JAX function to a Futhark function."""
         # Reset environment
         self.expr_translator.env.clear()
+        self.is_entry_point = is_entry_point
 
         # Translate parameters
         params = []
@@ -311,17 +320,23 @@ class FunctionTranslator:
             type_ = self.expr_translator.type_translator.aval_to_futhark_type(
                 invar.aval
             )
+            # For entry points, wrap parameters in arrays
+            if is_entry_point:
+                type_ = TensorType(base=type_.base, dims=[0] + type_.dims)
             var = Var(f"x{i}", type_)
             self.expr_translator.env[invar] = var
             params.append(var)
 
         # Translate body
-        body : List[Let] = []
+        body: List[Let] = []
         for eqn in jaxpr.jaxpr.eqns:
             body.extend(self.expr_translator.translate_eqn(eqn))
 
         # Get result
         result = self.expr_translator.translate_var(jaxpr.jaxpr.outvars[0])
+        # For entry points, wrap result in array if it's not already
+        if is_entry_point and not isinstance(result.type, TensorType):
+            result = FAppExpr("singleton", [result])
 
         return Function(name=name, params=params, body=body, result=result)
 
@@ -341,8 +356,11 @@ class ModuleTranslator:
         """Translate a collection of JAX functions to a Futhark module."""
         futhark_functions = []
         for name, jaxpr in functions:
+            is_entry = name in entry_points
             futhark_functions.append(
-                self.function_translator.translate_function(jaxpr, name)
+                self.function_translator.translate_function(
+                    jaxpr, name, is_entry_point=is_entry
+                )
             )
         return Module(functions=futhark_functions, entry_points=entry_points)
 
